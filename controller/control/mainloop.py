@@ -2,8 +2,8 @@ from machine import Pin
 import onewire, ds18x20
 import time
 import json
-from control.mqtt import client
 from control.config import configuration as cfg
+from control.comms import initialise_wifi, connect_wifi, connect_mqtt, reconnect_mqtt, wifi_status
 
 class DS18X20Sensor:
     ow = onewire.OneWire(Pin(cfg.ds18b20_pin))
@@ -23,7 +23,7 @@ class DS18X20Sensor:
                 DS18X20Sensor.ds.convert_temp()
                 return DS18X20Sensor.ds.read_temp(rom)
 
-    def check(self):
+    def check(self, mqtt_client):
         temp = self.get_temp()
         payload = {
             "sensorID": self.id,
@@ -32,14 +32,14 @@ class DS18X20Sensor:
             }
         print(f"DEBUG: Temp1 {temp:.1f}°C | Sensor {self.id}")
         if self.publish:
-            self.__publish__(payload)
+            self.__publish__(mqtt_client, payload)
 
-    def __publish__(self,  payload, qos=0):
+    def __publish__(self, mqtt_client, payload, qos=0):
         if not self.topic:
             print("DEBUG: No topic defined, not publishing")
             return
         pyl = json.dumps(payload)
-        client.publish(self.topic, pyl, qos)
+        mqtt_client.publish(self.topic, pyl, qos)
 
 def main():
     # Add the sensors defined in the config file
@@ -59,8 +59,21 @@ def main():
             mon = DS18X20Sensor(rom_code, id, topic=topic, publish=publish)
             mons.append(mon)
 
+    # Connect to WiFi and MQTT
+    wlan = initialise_wifi()
+    connect_wifi(wlan)
+
+    # This won't work since mqtt_client will not be defined if connect_mqtt fails
+    try:
+        mqtt_client = connect_mqtt()
+    except OSError as e:
+        reconnect_mqtt(mqtt_client)
+
     # Main loop
     while True:
         for mon in mons:
             mon.check()
             time.sleep(cfg.cycle_time)
+        if not wifi_status(wlan):
+            print("DEBUG: WiFi disconnected, reconnecting...")
+            connect_wifi(wlan)
