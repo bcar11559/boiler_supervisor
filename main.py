@@ -1,5 +1,5 @@
 import sys
-from controller.control import mainloop
+from control import mainloop
 
 try:
     mainloop.main()
