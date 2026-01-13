@@ -3,6 +3,6 @@ print(f'Booting: Firmware version {VERSION}')
 
 import webrepl
 import ugit
-webrepl.start()
 
 ugit.pull_all()
+webrepl.start()
