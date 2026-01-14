@@ -47,16 +47,16 @@ class DS18X20Sensor:
 def main():
     # Add the sensors defined in the config file
     mons = []
-    for sensor in cfg.sensors.values():
-        if sensor["type"] == "ds18b20":
-            rom_code = sensor["address"]
-            id = sensor
-            if "topic" in sensor:
-                topic = sensor["topic"]
+    for skey, sval in cfg.sensors.items():
+        if sval["type"] == "ds18b20":
+            rom_code = sval["address"]
+            id = skey
+            if "topic" in sval:
+                topic = sval["topic"]
             else:
                 topic = None
-            if "publish" in sensor:
-                publish = sensor["publish"]
+            if "publish" in sval:
+                publish = sval["publish"]
             else:
                 publish = False
             mon = DS18X20Sensor(rom_code, id, topic=topic, publish=publish)
