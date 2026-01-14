@@ -6,6 +6,8 @@ from umqtt.simple import MQTTClient
 
 from control.config import configuration as cfg
 
+from boot import DEBUG
+
 CLIENT_ID = ubinascii.hexlify(machine.unique_id())
 
 def connect_mqtt():
@@ -15,13 +17,14 @@ def connect_mqtt():
     return client
 
 def reconnect_mqtt(client):
-    print('Failed to connect to MQTT broker, Reconnecting...' % (cfg.mqtt_server))
+    if DEBUG:
+        print('Failed to connect to MQTT broker, Reconnecting...' % (cfg.mqtt_server))
     time.sleep(5)
     client.reconnect()
 
 def initialise_wifi():
     wlan = network.WLAN(network.STA_IF)
-    wlan.hostname(f'esp32-{CLIENT_ID.decode()}')
+    network.hostname(f'esp32-{CLIENT_ID.decode()}')
     wlan.active(True)
     wlan.config(reconnects=5)
     return wlan
@@ -32,15 +35,16 @@ def connect_wifi(wlan):
 
     connection_timeout = 10
     while connection_timeout > 0:
-        if wlan.connected():
-            print('Connection successful!')
+        if wlan.isconnected():          
             network_info = wlan.ifconfig()
-            print('IP address:', network_info[0])
+            print('Connection successful! IP address:', network_info[0])
             return True
         connection_timeout -= 1
-        print('Waiting for Wi-Fi connection...')
+        if DEBUG:
+            print('Waiting for Wi-Fi connection...')
         time.sleep(1)
-    print('Wi-Fi connection timeout...')
+    if DEBUG:
+        print('Wi-Fi connection timeout...')
     return False
 
 def wifi_status(wlan):

@@ -1,8 +1,6 @@
 VERSION = "dev0.0.1"
 print(f'Booting: Firmware version {VERSION}')
 
-import webrepl
-import ugit
+DEBUG = False
 
-ugit.pull_all()
-webrepl.start()
+## end
