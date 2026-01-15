@@ -12,15 +12,22 @@ CLIENT_ID = ubinascii.hexlify(machine.unique_id())
 
 def connect_mqtt():
     print('Connected to MQTT Broker "%s"' % (cfg.mqtt_server))
-    client = MQTTClient(CLIENT_ID, cfg.mqtt_server, cfg.mqtt_port, cfg.mqtt_user, cfg.mqtt_password)
+    client = MQTTClient(CLIENT_ID, 
+                        cfg.mqtt_server, 
+                        cfg.mqtt_port, 
+                        cfg.mqtt_user, 
+                        cfg.mqtt_password,
+                        keepalive=2)
+    client.set_last_will(f"{CLIENT_ID}-lastwillmessage")
     client.connect()
     return client
 
 def reconnect_mqtt(client):
     if DEBUG:
         print('Failed to connect to MQTT broker, Reconnecting...' % (cfg.mqtt_server))
+    client.disconnect()
     time.sleep(5)
-    client.reconnect()
+    client.connect()
 
 def initialise_wifi():
     wlan = network.WLAN(network.STA_IF)

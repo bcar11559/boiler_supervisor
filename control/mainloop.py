@@ -65,13 +65,8 @@ def main():
     # Connect to WiFi and MQTT
     wlan = initialise_wifi()
     connect_wifi(wlan)
-
-    # This won't work since mqtt_client will not be defined if connect_mqtt fails
-    try:
-        mqtt_client = connect_mqtt()
-    except OSError as e:
-        reconnect_mqtt(mqtt_client)
-
+    mqtt_client = connect_mqtt()
+    
     # Main loop
     while True:
         for mon in mons:
@@ -81,3 +76,4 @@ def main():
             if DEBUG:
                 print("DEBUG: WiFi disconnected, reconnecting...")
             connect_wifi(wlan)
+            reconnect_mqtt(mqtt_client)

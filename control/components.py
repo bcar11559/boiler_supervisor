@@ -26,3 +26,11 @@ def pid_controller(setpoint, measurement, kp, ki, kd, prev_error, integral, dt):
     derivative = (error - prev_error) / dt if dt > 0 else 0
     output = kp * error + ki * integral + kd * derivative
     return output, error, integral
+
+def heating_curve(t_outdoor, p=0, slope=1.0, n=0.97, t_base=20):
+    """Calculates the required supply temperature based on outdoor temperature."""
+    if t_outdoor >= 22:
+        return t_base
+    else:
+        sign = (t_outdoor - 22) / abs(t_outdoor - 22)
+        return p + t_base - ((abs(t_outdoor - 22) ** n) * slope * sign)
