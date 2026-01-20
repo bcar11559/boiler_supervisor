@@ -12,6 +12,7 @@ class Config:
         #WiFi Settings
         self.ssid = self.data["wifi"]["ssid"]
         self.password = self.data["wifi"]["password"]
+        self.wifitimeout = self.data["wifi"]["timeout"]
 
         #MQTT Settings
         self.mqtt_server = self.data["mqtt"]["server"]
@@ -21,6 +22,6 @@ class Config:
         self.client_id = self.data["mqtt"]["client_id"]
 
         #Sensors
-        self.sensors = self.data["sensors"]
+        self.signals = self.data["signals"]
 
 configuration = Config()

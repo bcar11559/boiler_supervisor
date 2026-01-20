@@ -1,79 +1,163 @@
-from machine import Pin
-import onewire, ds18x20
 import time
-import json
+import random
+from datetime import datetime
+import logging
+
+import numpy as np
+
 from control.config import configuration as cfg
-from control.comms import initialise_wifi, connect_wifi, connect_mqtt, reconnect_mqtt, wifi_status
-from boot import DEBUG
+from control.signals import Signal, MQTTSignal, OutputSignal
+from control.components import HeatingController
+from control.comms import MQTTConnection_x86 as MQTTConnection
+from control.comms import WiFiConnection_x86 as WiFiConnection
 
-class DS18X20Sensor:
-    ow = onewire.OneWire(Pin(cfg.ds18b20_pin))
-    ds = ds18x20.DS18X20(ow)
-    alldevices = {rom.hex(): rom for rom in ds.scan()}
-    print("Found local DS18B20 devices:", alldevices)
+logger = logging.getLogger(__name__)
 
-    def __init__(self, rom_code, id, topic=None, publish=False):
-        self.rom_code = rom_code
-        self.id = id
-        self.topic = topic
-        self.publish = publish
+global signals
+global subscribed_topics
 
-    def get_temp(self):
-        for rom_code, rom in DS18X20Sensor.alldevices.items():
-            if rom_code == self.rom_code:
-                DS18X20Sensor.ds.convert_temp()
-                return DS18X20Sensor.ds.read_temp(rom)
+signals = []
+subscribed_topics = []
+# Attach the main process signals
 
-    def check(self, mqtt_client):
-        temp = self.get_temp()
-        payload = {
-            "sensorID": self.id,
-            "sensorROM": self.rom_code,
-            "temperature": temp,
-            }
-        if DEBUG:
-            print(f"DEBUG: Temp1 {temp:.1f}°C | Sensor {self.id}")
-        if self.publish:
-            self.__publish__(mqtt_client, payload)
+# otl_signal = Signal(cfg.signals.get("outside_temp_local"))
+# cfg.signals.get("inside_temp")
+# cfg.signals.get("solar_gain")
+# cfg.signals.get("outside_temp_remote")
+# cfg.signals.get("heating_controller")
 
-    def __publish__(self, mqtt_client, payload, qos=0):
-        if not self.topic:
-            if DEBUG:
-                print("DEBUG: No topic defined, not publishing")
-            return
-        pyl = json.dumps(payload)
-        mqtt_client.publish(self.topic, pyl, qos)
+
+for id, vals in cfg.signals.items():
+
+    sigtype = vals.get("type")
+
+    if sigtype == "ds18b20":
+        signal = None
+        continue
+        signal = DS18X20Signal(id, 
+                               sigtype, 
+                               vals.get("address"), 
+                               publish_topic=vals.get("publish_topic"))
+        
+    if sigtype in ["mqtt-input", "mqtt-output"]:
+        topic = vals.get("subscribe_topic")
+        if topic:
+            subscribed_topics.append(topic)
+        signal = MQTTSignal(id,
+                            sigtype,
+                            vals.get("mapping", {}),
+                            publish_topic=vals.get("publish_topic"),
+                            subscribe_topic=vals.get("subscribe_topic"))
+    
+    if sigtype == "hc":
+        # Initialise the controller
+        outside_temp = 0.1
+        outside_temp_remote = -1.1
+        outside_temp_remote_wchill = -8
+        winddir = 100
+        inside_temp = 21
+        setpoint = 18
+        hc = HeatingController(
+            id,
+            outside_temp, 
+            outside_temp_remote, 
+            outside_temp_remote_wchill, 
+            winddir, 
+            inside_temp,
+            setpoint)
+        hc.signal = OutputSignal(id, hc, sigtype, publish_topic=vals.get("publish_topic"))
+        signal = hc.signal
+
+    if signal:
+        signals.append(signal)
+
+subscribed_topics = list(set(subscribed_topics))
+
+
+def on_message(client, userdata, msg):
+
+    msg_, topic_ = MQTTConnection.decode_msg(msg)
+    thissignal = None
+
+    for signal in signals:
+        if topic_ == signal.subscribe_topic:
+            if msg_["signalID"] == signal.id:
+                thissignal = signal
+                break
+    
+    if not thissignal:
+        return
+
+    for key, value in msg_.items():
+        if key == "signalID":
+            continue
+        setattr(thissignal, key, value)
+
+    # if thissignal.id == "smhi_134110":
+    #     s = thissignal
+    #     print(f"Updated vals @ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: {s.temperature}, {s.windChill} {s.windDirection}") 
+
+wifi = WiFiConnection()
+wifi.connect()
+mqtt = MQTTConnection()
+for topic in subscribed_topics:
+    mqtt.subscribe(topic, on_message)
+for signal in signals:
+    signal.set_mqtt_connection(mqtt)
+
+def calculate_input_power(Pnom, t_room, t_flow, delta_t=10):
+    t_return = t_flow - delta_t
+    dTln = (t_flow - t_return) / np.log((t_flow-t_room)/(t_return-t_room)) 
+    return Pnom * (dTln / 49.83289) ** 1.3
+
 
 def main():
-    # Add the sensors defined in the config file
-    mons = []
-    for skey, sval in cfg.sensors.items():
-        if sval["type"] == "ds18b20":
-            rom_code = sval["address"]
-            id = skey
-            if "topic" in sval:
-                topic = sval["topic"]
-            else:
-                topic = None
-            if "publish" in sval:
-                publish = sval["publish"]
-            else:
-                publish = False
-            mon = DS18X20Sensor(rom_code, id, topic=topic, publish=publish)
-            mons.append(mon)
+    try:
+        i = 0
+        while True:
+            i+=1
 
-    # Connect to WiFi and MQTT
-    wlan = initialise_wifi()
-    connect_wifi(wlan)
-    mqtt_client = connect_mqtt()
-    
-    # Main loop
-    while True:
-        for mon in mons:
-            mon.check(mqtt_client)
+            if i > 2*60*60/cfg.cycle_time:
+                i=0
+                r = random.random()*4
+                hc.setpoint = 18 + r
+
+            Ploss = (hc.inside_temp-hc.outside_temp_remote_wchill)*150
+            Pi = calculate_input_power(15000, hc.inside_temp, hc.flow_temp)
+            diff_gain = (Pi - Ploss)*0.0001
+
+            hc.inside_temp += diff_gain
+            logger.debug(f"ft={hc.flow_temp:.2f}, sp={hc.setpoint:.2f}, it={hc.inside_temp:.2f}, loss={Ploss:.2f}, ip={Pi:.2f}, dg={diff_gain:.2f}")
+
+            # Receive any updated subscribed values, do the control calculation
+            # and then publish the latest values of all the signals.
+            mqtt.receive()
+
+            update = False
+            for signal in signals:
+                if signal.id == "smhi_134110":
+                    if (signal.temperature is not None) and (signal.temperature != hc.outside_temp_remote):
+                        hc.outside_temp_remote = signal.temperature
+                        update = True
+                    if (signal.windChill is not None) and (signal.windChill != hc.outside_temp_remote_wchill):
+                        hc.outside_temp_remote_wchill = signal.windChill
+                        update = True
+                    if (signal.windDirection is not None) and (signal.windDirection != hc.winddir):
+                        hc.winddir = signal.windDirection
+                        update = True
+                    if update:
+                        logger.debug(f"Updated controller vals: ot={hc.outside_temp_remote}, wchill={hc.outside_temp_remote_wchill} winddir={hc.winddir}")
+                        update = False
+
+            for signal in signals:
+                signal.publish()
+            
+            if not wifi.status():
+                logger.info("WiFi disconnected, reconnecting...")
+                wifi.connect()
+                mqtt.reconnect()
+            
+            # OK as long as cycle_time >> time it takes to do everything else
             time.sleep(cfg.cycle_time)
-        if not wifi_status(wlan):
-            if DEBUG:
-                print("DEBUG: WiFi disconnected, reconnecting...")
-            connect_wifi(wlan)
-            reconnect_mqtt(mqtt_client)
+    finally:
+        mqtt.disconnect()

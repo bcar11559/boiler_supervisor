@@ -1,14 +1,31 @@
-import sys
+import logging
+logger = logging.getLogger(__name__)
+
+from initialise import is_micropython
+
+
+if is_micropython():
+    import machine
+else:
+    import os
+
 from control import mainloop
 
+VERSION = "dev0.0.1"
+DEBUG = False
+logger.info(f'Firmware version: {VERSION}')
+logger.info(f'Logging Level: {logger.level}')
+
 try:
+    logger.info(f'Entering main loop now...')
     mainloop.main()
 except Exception as e:
-    print("Fatal error in main:")
-    sys.print_exception(e)
+    logger.exception("Exception raised when running mainloop.")
+finally:
+    if is_micropython():
+        logger.info(f'Rebooting now...')
+        machine.reset()
+    else:
+        os.sys.exit()
+        
 
-# Following a normal Exception or main() exiting, reset the board.
-# Following a non-Exception error such as KeyboardInterrupt (Ctrl-C),
-# this code will drop to a REPL. Place machine.reset() in a finally
-# block to always reset, instead.
-#machine.reset()
