@@ -11,7 +11,7 @@ else:
 
 from control import mainloop
 
-VERSION = "dev0.0.1"
+VERSION = "dev0.0.2"
 DEBUG = False
 logger.info(f'Firmware version: {VERSION}')
 logger.info(f'Logging Level: {logger.level}')
