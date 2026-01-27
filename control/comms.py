@@ -1,3 +1,4 @@
+from control.mainloop import on_message
 from initialise import is_micropython
 import logging
 
@@ -25,6 +26,7 @@ else:
 import time
 import json
 from control.config import configuration as cfg
+from control.signals import MQTTSource
 
 class MQTTConnection_x86:
 
@@ -39,6 +41,8 @@ class MQTTConnection_x86:
         self.client.connect(cfg.mqtt_server, 
                             cfg.mqtt_port)
         self.client.loop_start()
+        for topic in MQTTSource.subscribed_topics:
+            self.subscribe(topic, self.on_message)
 
     @staticmethod
     def on_connect(client, userdata, flags, rc, properties):
@@ -72,6 +76,12 @@ class MQTTConnection_x86:
         msg_ = json.loads(msg.payload.decode())
         topic_ = msg.topic
         return msg_, topic_
+    
+    @staticmethod
+    def on_message(client, userdata, msg):
+        msg_, topic_ = MQTTConnection_x86.decode_msg(msg)
+        #sigs = MQTTSource.get_signals_with_topic(topic_)
+        MQTTSource.update_signal_with_id(msg_.get("signalID", None), msg_)
 
     def receive(self):
         return
@@ -104,7 +114,7 @@ class MQTTConnection_uP:
         topic_ = topic.decode()
         msg_ = json.loads(msg.decode())
         return msg_, topic_
-
+    
     def subscribe(self, topic):
         self.client.subscribe(topic)
 
