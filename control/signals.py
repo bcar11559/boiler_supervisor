@@ -2,18 +2,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 import json
-from control.config import configuration as cfg
-from control.hwi import DS18X20Sensor
+from control.interfaces import Sensor, DS18X20Sensor
+from control.exceptions import SignalError
 
-SUPPORTED_SIG_TYPES = ["ds18b20"]
-
-class SignalError(Exception):
-
-    def __init__(self, message):
-        super().__init__(message)
-
-    def __str__(self):
-        return f"{self.message}"
+SUPPORTED_SIG_TYPES = ["ds18b20", "mqtt", "ntc450"]
 
 def make_signal(id, sigspec, source=None):
 
@@ -58,6 +50,10 @@ def make_signal(id, sigspec, source=None):
             source =  DS18X20Sensor(id, rom_code)
         return Signal(id, sigspec, source)
 
+    if sigtype == "ntc450":
+        source =  Sensor(id)
+        return Signal(id, sigspec, source)
+
     # Create the signal
     if sigtype == "mqtt":
         subscribe_topic =  sigspec.get("subscribe_topic", None)
@@ -69,12 +65,13 @@ def make_signal(id, sigspec, source=None):
             msg = f"Source argument must be supplied for MQTT Signals!"
             logger.exception(msg)
             raise SignalError(msg)
-        return MQTTSource(id, sigspec, source)
+        return Signal(id, sigspec, source)
 
 class Signal:
 
     mqtt = None
     all_signals = []
+    subscribed_topics = []
 
     def __init__(self, id, sigspec, source):
         self.id = id
@@ -82,6 +79,8 @@ class Signal:
         self.publish_topic = sigspec.get("publish_topic")
         self.source = source
         Signal.all_signals.append(self)
+        self.subscribe_topic = sigspec.get("subscribe_topic")
+        Signal.add_subscribed_topic(sigspec.get("subscribe_topic"))
 
     @classmethod
     def set_mqtt_connection(cls, mqtt):
@@ -92,42 +91,9 @@ class Signal:
         for signal in cls.all_signals:
             signal.publish()
 
-    def publish(self):
-        self.__publish__(self.source.payload)
-
-    def __publish__(self,  payload, qos=0):
-        if not self.publish_topic:
-            return
-        pyl = json.dumps(payload)
-        if Signal.mqtt:
-            Signal.mqtt.publish(self.publish_topic, pyl, qos)
-
-class MQTTSource(Signal):
-
-    subscribed_topics = []
-
-    def __init__(self, id, sigspec, source):
-        super().__init__(id, sigspec, source)
-        self.subscribe_topic = sigspec.get("subscribe_topic")
-        MQTTSource.add_subscribed_topic(sigspec.get("subscribe_topic"))
-
-    @classmethod
-    def add_subscribed_topic(cls, topic):
-        if topic not in cls.subscribed_topics:
-            cls.subscribed_topics.append(topic)
-    
-    @classmethod
-    def get_signals_with_topic(cls, topic):
-        signals = []
-        for signal in Signal.all_signals:
-            if isinstance(signal, MQTTSource):
-                if signal.subscribe_topic == topic:
-                    signals.append(signal)
-        return signals
-
     @classmethod
     def get_signal_with_id(cls, id):
-        for signal in Signal.all_signals:
+        for signal in cls.all_signals:
             if signal.id == id:
                 return signal
     
@@ -138,7 +104,36 @@ class MQTTSource(Signal):
             for key, value in msg_.items():
                 if key == "signalID":
                     continue
+                print(1, key, value)
                 setattr(signal, key, value)
+
+    @classmethod
+    def add_subscribed_topic(cls, topic):
+        if topic not in cls.subscribed_topics:
+            cls.subscribed_topics.append(topic)
+    
+    # @classmethod
+    # def get_signals_with_topic(cls, topic):
+    #     signals = []
+    #     for signal in Signal.all_signals:
+    #         if isinstance(signal, cls):
+    #             if signal.subscribe_topic == topic:
+    #                 signals.append(signal)
+    #     return signals
+
+    def publish(self):
+        if not self.source:
+            return
+        self.__publish__(self.source.payload)
+
+    def __publish__(self,  payload, qos=0):
+        if not self.publish_topic:
+            return
+        pyl = json.dumps(payload)
+        if Signal.mqtt:
+            Signal.mqtt.publish(self.publish_topic, pyl, qos)
+
+
 
 
 

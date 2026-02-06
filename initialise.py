@@ -22,11 +22,13 @@ logger = logging.getLogger(__name__)
 
 import platform
 
-def is_micropython():
+def get_platform():
     platform_info = platform.platform()
     if platform_info.startswith("Micropython"):
-        logger.info(f'Running Micropython: {platform_info}')
+        logger.debug(f'Running Micropython: {platform_info}')
         return True
     else:
-        logger.info(f'Running CPython: {platform_info} ')
+        logger.debug(f'Running CPython: {platform_info} ')
         return False
+
+is_micropython = get_platform()

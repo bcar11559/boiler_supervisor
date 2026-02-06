@@ -1,11 +1,8 @@
-from control.mainloop import on_message
 from initialise import is_micropython
 import logging
-
 logger = logging.getLogger(__name__)
 
-
-if is_micropython():
+if is_micropython:
     import machine
     import ubinascii
     import network
@@ -26,7 +23,17 @@ else:
 import time
 import json
 from control.config import configuration as cfg
-from control.signals import MQTTSource
+from control.interfaces import MQTTInterface
+
+
+def make_MQTTConnection():
+    if is_micropython:
+
+    else:
+
+
+
+
 
 class MQTTConnection_x86:
 
@@ -38,11 +45,12 @@ class MQTTConnection_x86:
         # client.username_pw_set(username, password)
         self.client.on_connect = self.on_connect
         self.client.on_disconnect = self.on_disconnect
+        self.client.on_message = self.on_message
         self.client.connect(cfg.mqtt_server, 
                             cfg.mqtt_port)
         self.client.loop_start()
-        for topic in MQTTSource.subscribed_topics:
-            self.subscribe(topic, self.on_message)
+        for topic in MQTTInterface.subscribed_topics:
+            self.subscribe(topic)
 
     @staticmethod
     def on_connect(client, userdata, flags, rc, properties):
@@ -80,8 +88,7 @@ class MQTTConnection_x86:
     @staticmethod
     def on_message(client, userdata, msg):
         msg_, topic_ = MQTTConnection_x86.decode_msg(msg)
-        #sigs = MQTTSource.get_signals_with_topic(topic_)
-        MQTTSource.update_signal_with_id(msg_.get("signalID", None), msg_)
+        MQTTInterface.update_interface(msg_.get("signalID", None), msg_)
 
     def receive(self):
         return
@@ -89,9 +96,8 @@ class MQTTConnection_x86:
     def publish(self, topic, payload, qos=0):
         return self.client.publish(topic, payload, qos)
 
-    def subscribe(self, topic, message_callback):
+    def subscribe(self, topic):
         self.client.subscribe(topic)
-        self.client.on_message = message_callback
 
     def disconnect(self):
         self.client.disconnect()
