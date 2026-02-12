@@ -1,30 +1,41 @@
-import logging
-logger = logging.getLogger(__name__)
+from applibs.logger import ApplicationLogger
+ApplicationLogger()
+logger = ApplicationLogger.logger
 
-from initialise import is_micropython
+from micropython import const
 
+import time, machine
 
-if is_micropython():
-    import machine
-else:
-    import os
+from applibs.comms import initialise_wifi, connect_wifi, wifi_connected, wan_ok
+from applibs.timing import set_clock
+from applibs.sysutils import get_platform
+from applibs.mainloop import maintest_rgb_blink
 
-from control import mainloop
-
-VERSION = "dev0.0.2"
-DEBUG = False
+VERSION = const("dev0.0.2")
+ 
 logger.info(f'Firmware version: {VERSION}')
-logger.info(f'Logging Level: {logger.level}')
+
+is_micropython = get_platform()
+
+wlan = initialise_wifi()
+connect_wifi(wlan)
+
+if wifi_connected(wlan):
+    if wan_ok():
+        set_clock()
 
 try:
     logger.info(f'Entering main loop now...')
-    mainloop.main()
+
+    while True:
+        maintest_rgb_blink()
+
 except Exception as e:
     logger.exception("Exception raised when running mainloop.")
+
 finally:
-    if is_micropython():
-        logger.info(f'Rebooting now...')
-        machine.reset()
-    else:
-        os.sys.exit()
+    for i in range(-5):
+        logger.info(f'Dropped out of main loop somehow, hard reset in {-i}s')
+        time.sleep(1)
+    machine.reset()
         
